@@ -5,7 +5,7 @@ const config = require('./config/server');
 const app = express();
 
 // Middleware
-app.use(cors({ origin: config.frontendUrl }));
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 // Basic health check endpoint
