@@ -8,12 +8,13 @@ const initializeWebSocket = (server) => {
   const wss = new WebSocketServer({ server });
 
   wss.on('connection', (ws, req) => {
-    // Parse URL and extract username: ws://localhost:3000?username=Alice
+    // Parse URL: ws://localhost:3000?username=Alice&userId=abc123
     const reqUrl = url.parse(req.url, true);
     const username = reqUrl.query.username || `Guest_${Math.floor(Math.random() * 1000)}`;
+    const userId = reqUrl.query.userId || null;
 
-    // Register connected client
-    addClient(ws, username);
+    // Register connected client with userId
+    addClient(ws, username, userId);
 
     // Broadcast system join message
     broadcastMessage(formatMessage('System', `${username} joined the chat.`, 'system'));
@@ -31,7 +32,7 @@ const initializeWebSocket = (server) => {
       }
     });
 
-    // Handle WebSocket errors locally for this client
+    // Handle WebSocket errors
     ws.on('error', (error) => {
       console.error(`WebSocket error from ${username}:`, error);
     });

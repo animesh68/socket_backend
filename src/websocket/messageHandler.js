@@ -1,26 +1,70 @@
-const { broadcastMessage, getClientInfo } = require('./clients');
+const { broadcastMessage, getClientInfo, sendToUser } = require('./clients');
+const Message = require('../models/Message');
 
-const handleMessage = (ws, message) => {
+const handleMessage = async (ws, message) => {
   try {
-    // Parse incoming message (expected to be stringified JSON)
     const payload = JSON.parse(message.toString());
-    
-    // Retrieve the sender's info using the socket reference
     const clientInfo = getClientInfo(ws);
-    const username = clientInfo ? clientInfo.username : 'Unknown';
+    if (!clientInfo) return;
 
-    // Broadcast the exact payload plus a timestamp, and ensure we map the user.
-    // If frontend already provided 'user', this overrides/supplements it cleanly.
-    const outgoingMessage = JSON.stringify({
-      ...payload,
-      user: username,
-      timestamp: new Date().toISOString()
-    });
-    
-    // Broadcast message to everyone
-    broadcastMessage(outgoingMessage);
+    const { username, userId } = clientInfo;
+    const text = payload.text?.trim();
+    if (!text) return;
+
+    const msgType = payload.type === 'dm' ? 'dm' : 'general';
+
+    if (msgType === 'general') {
+      // ── General broadcast ──────────────────────────────────────────────
+      const outgoing = JSON.stringify({
+        type: 'general',
+        user: username,
+        text,
+        timestamp: new Date().toISOString(),
+      });
+
+      broadcastMessage(outgoing);
+
+      // Persist to DB (fire-and-forget, don't await to keep WS fast)
+      if (userId) {
+        Message.create({
+          sender: userId,
+          senderName: username,
+          receiver: null,
+          text,
+          type: 'general',
+        }).catch((err) => console.error('Failed to save general message:', err));
+      }
+    } else {
+      // ── Direct message ─────────────────────────────────────────────────
+      const toUserId = payload.to; // target user _id string
+      if (!toUserId || !userId) return;
+
+      const outgoing = JSON.stringify({
+        type: 'dm',
+        from: userId,
+        fromName: username,
+        to: toUserId,
+        text,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Send to recipient (if online)
+      sendToUser(toUserId, outgoing);
+
+      // Echo back to sender as well (so their own chat window updates)
+      sendToUser(userId, outgoing);
+
+      // Persist to DB
+      Message.create({
+        sender: userId,
+        senderName: username,
+        receiver: toUserId,
+        text,
+        type: 'dm',
+      }).catch((err) => console.error('Failed to save DM:', err));
+    }
   } catch (error) {
-    console.error('Error parsing incoming message:', error);
+    console.error('Error handling message:', error);
   }
 };
 
